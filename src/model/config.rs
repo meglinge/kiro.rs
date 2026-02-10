@@ -1,6 +1,7 @@
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -80,6 +81,19 @@ pub struct Config {
     /// 设置为 0 或不设置则禁用定期检查
     #[serde(default)]
     pub balance_check_interval: Option<u64>,
+
+    /// 禁用伪思考（thinking）功能
+    /// 设置为 true 时，即使客户端请求了 thinking，也会强制关闭
+    #[serde(default)]
+    pub disable_thinking: bool,
+
+    /// 负载均衡模式（"priority" 或 "balanced"）
+    #[serde(default = "default_load_balancing_mode")]
+    pub load_balancing_mode: String,
+
+    /// 配置文件路径（运行时元数据，不写入 JSON）
+    #[serde(skip)]
+    config_path: Option<PathBuf>,
 }
 
 fn default_host() -> String {
@@ -95,7 +109,7 @@ fn default_region() -> String {
 }
 
 fn default_kiro_version() -> String {
-    "0.8.0".to_string()
+    "0.9.2".to_string()
 }
 
 fn default_system_version() -> String {
@@ -113,6 +127,10 @@ fn default_count_tokens_auth_type() -> String {
 
 fn default_tls_backend() -> TlsBackend {
     TlsBackend::Rustls
+}
+
+fn default_load_balancing_mode() -> String {
+    "priority".to_string()
 }
 
 impl Default for Config {
@@ -135,6 +153,9 @@ impl Default for Config {
             proxy_password: None,
             admin_api_key: None,
             balance_check_interval: None,
+            disable_thinking: false,
+            load_balancing_mode: default_load_balancing_mode(),
+            config_path: None,
         }
     }
 }
@@ -150,11 +171,31 @@ impl Config {
         let path = path.as_ref();
         if !path.exists() {
             // 配置文件不存在，返回默认配置
-            return Ok(Self::default());
+            let mut config = Self::default();
+            config.config_path = Some(path.to_path_buf());
+            return Ok(config);
         }
 
         let content = fs::read_to_string(path)?;
-        let config: Config = serde_json::from_str(&content)?;
+        let mut config: Config = serde_json::from_str(&content)?;
+        config.config_path = Some(path.to_path_buf());
         Ok(config)
+    }
+
+    /// 获取配置文件路径（如果有）
+    pub fn config_path(&self) -> Option<&Path> {
+        self.config_path.as_deref()
+    }
+
+    /// 将当前配置写回原始配置文件
+    pub fn save(&self) -> anyhow::Result<()> {
+        let path = self
+            .config_path
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("配置文件路径未知，无法保存配置"))?;
+
+        let content = serde_json::to_string_pretty(self).context("序列化配置失败")?;
+        fs::write(path, content).with_context(|| format!("写入配置文件失败: {}", path.display()))?;
+        Ok(())
     }
 }
