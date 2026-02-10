@@ -25,6 +25,8 @@ pub struct AppState {
     pub kiro_provider: Option<Arc<KiroProvider>>,
     /// Profile ARN（可选，用于请求）
     pub profile_arn: Option<String>,
+    /// 是否禁用伪思考
+    pub disable_thinking: bool,
 }
 
 impl AppState {
@@ -34,6 +36,7 @@ impl AppState {
             api_key: api_key.into(),
             kiro_provider: None,
             profile_arn: None,
+            disable_thinking: false,
         }
     }
 
@@ -46,6 +49,12 @@ impl AppState {
     /// 设置 Profile ARN
     pub fn with_profile_arn(mut self, arn: impl Into<String>) -> Self {
         self.profile_arn = Some(arn.into());
+        self
+    }
+
+    /// 设置是否禁用 thinking
+    pub fn with_disable_thinking(mut self, disable: bool) -> Self {
+        self.disable_thinking = disable;
         self
     }
 }

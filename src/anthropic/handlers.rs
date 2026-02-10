@@ -84,7 +84,7 @@ pub async fn get_models() -> impl IntoResponse {
 /// 创建消息（对话）
 pub async fn post_messages(
     State(state): State<AppState>,
-    JsonExtractor(payload): JsonExtractor<MessagesRequest>,
+    JsonExtractor(mut payload): JsonExtractor<MessagesRequest>,
 ) -> Response {
     tracing::info!(
         model = %payload.model,
@@ -122,6 +122,11 @@ pub async fn post_messages(
         ) as i32;
 
         return websearch::handle_websearch_request(provider, &payload, input_tokens).await;
+    }
+
+    // 如果禁用了 thinking，清除请求中的 thinking 配置以阻止标签注入
+    if state.disable_thinking {
+        payload.thinking = None;
     }
 
     // 转换请求
@@ -176,12 +181,16 @@ pub async fn post_messages(
         payload.tools,
     ) as i32;
 
-    // 检查是否启用了thinking
-    let thinking_enabled = payload
-        .thinking
-        .as_ref()
-        .map(|t| t.is_enabled())
-        .unwrap_or(false);
+    // 检查是否启用了thinking（受 disable_thinking 配置控制）
+    let thinking_enabled = if state.disable_thinking {
+        false
+    } else {
+        payload
+            .thinking
+            .as_ref()
+            .map(|t| t.is_enabled())
+            .unwrap_or(false)
+    };
 
     if payload.stream {
         // 流式响应
@@ -542,7 +551,7 @@ pub async fn count_tokens(
 /// - message_start 中的 input_tokens 是从 contextUsageEvent 计算的准确值
 pub async fn post_messages_cc(
     State(state): State<AppState>,
-    JsonExtractor(payload): JsonExtractor<MessagesRequest>,
+    JsonExtractor(mut payload): JsonExtractor<MessagesRequest>,
 ) -> Response {
     tracing::info!(
         model = %payload.model,
@@ -581,6 +590,11 @@ pub async fn post_messages_cc(
         ) as i32;
 
         return websearch::handle_websearch_request(provider, &payload, input_tokens).await;
+    }
+
+    // 如果禁用了 thinking，清除请求中的 thinking 配置以阻止标签注入
+    if state.disable_thinking {
+        payload.thinking = None;
     }
 
     // 转换请求
@@ -635,12 +649,16 @@ pub async fn post_messages_cc(
         payload.tools,
     ) as i32;
 
-    // 检查是否启用了thinking
-    let thinking_enabled = payload
-        .thinking
-        .as_ref()
-        .map(|t| t.is_enabled())
-        .unwrap_or(false);
+    // 检查是否启用了thinking（受 disable_thinking 配置控制）
+    let thinking_enabled = if state.disable_thinking {
+        false
+    } else {
+        payload
+            .thinking
+            .as_ref()
+            .map(|t| t.is_enabled())
+            .unwrap_or(false)
+    };
 
     if payload.stream {
         // 流式响应（缓冲模式）
