@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { useCredentials, useAddCredential, useDeleteCredential } from '@/hooks/use-credentials'
 import { getCredentialBalance, setCredentialDisabled } from '@/api/credentials'
-import { extractErrorMessage } from '@/lib/utils'
+import { extractErrorMessage, sha256Hex } from '@/lib/utils'
 
 interface BatchImportDialogProps {
   open: boolean
@@ -23,6 +23,8 @@ interface CredentialInput {
   clientId?: string
   clientSecret?: string
   region?: string
+  authRegion?: string
+  apiRegion?: string
   priority?: number
   machineId?: string
 }
@@ -38,12 +40,7 @@ interface VerificationResult {
   rollbackError?: string
 }
 
-async function sha256Hex(value: string): Promise<string> {
-  const encoded = new TextEncoder().encode(value)
-  const digest = await crypto.subtle.digest('SHA-256', encoded)
-  const bytes = new Uint8Array(digest)
-  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
-}
+
 
 export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps) {
   const [jsonInput, setJsonInput] = useState('')
@@ -85,16 +82,22 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
   }
 
   const handleBatchImport = async () => {
+    // 先单独解析 JSON，给出精准的错误提示
+    let credentials: CredentialInput[]
     try {
-      // 1. 解析 JSON
       const parsed = JSON.parse(jsonInput)
-      let credentials: CredentialInput[] = Array.isArray(parsed) ? parsed : [parsed]
+      credentials = Array.isArray(parsed) ? parsed : [parsed]
+    } catch (error) {
+      toast.error('JSON 格式错误: ' + extractErrorMessage(error))
+      return
+    }
 
-      if (credentials.length === 0) {
-        toast.error('没有可导入的凭据')
-        return
-      }
+    if (credentials.length === 0) {
+      toast.error('没有可导入的凭据')
+      return
+    }
 
+    try {
       setImporting(true)
       setProgress({ current: 0, total: credentials.length })
 
@@ -174,7 +177,8 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
           const addedCred = await addCredential({
             refreshToken: token,
             authMethod,
-            region: cred.region?.trim() || undefined,
+            authRegion: cred.authRegion?.trim() || cred.region?.trim() || undefined,
+            apiRegion: cred.apiRegion?.trim() || undefined,
             clientId,
             clientSecret,
             priority: cred.priority || 0,
@@ -255,7 +259,7 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
         }
       }
     } catch (error) {
-      toast.error('JSON 格式错误: ' + extractErrorMessage(error))
+      toast.error('导入失败: ' + extractErrorMessage(error))
     } finally {
       setImporting(false)
     }
@@ -318,7 +322,7 @@ export function BatchImportDialog({ open, onOpenChange }: BatchImportDialogProps
               JSON 格式凭据
             </label>
             <textarea
-              placeholder={'粘贴 JSON 格式的凭据（支持单个对象或数组）\n例如: [{"refreshToken":"...","clientId":"...","clientSecret":"...","region":"us-east-1"}]'}
+              placeholder={'粘贴 JSON 格式的凭据（支持单个对象或数组）\n例如: [{"refreshToken":"...","clientId":"...","clientSecret":"...","authRegion":"us-east-1","apiRegion":"us-west-2"}]\n支持 region 字段自动映射为 authRegion'}
               value={jsonInput}
               onChange={(e) => setJsonInput(e.target.value)}
               disabled={importing}
